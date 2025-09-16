@@ -36,9 +36,27 @@ function parseOttawaDesignClub(html, baseUrl) {
 		const url = `https://ottdesign.club/${$(el).find('a').attr('href')}`;
 		const dateStr = $(el).find('.author').text().trim();
 		let date = "";
+		let longDate = "";
+		let shortDate = "";
+		// Try to parse date string
+		// Examples: "September 4, 2025", "October 2, 2025"
 		if (dateStr) {
 			const parsed = new Date(dateStr);
 			date = !isNaN(parsed) ? parsed.toISOString() : dateStr;
+			// Format longDate as "Month Day, Year", e.g., "September 4, 2025"
+			if (!isNaN(parsed)) {
+				const options = { month: "long", day: "numeric" };
+				longDate = parsed.toLocaleDateString("en-US", options);
+			} else {
+				longDate = dateStr;
+			}
+			// Format shortDate as "Mon Day", e.g., "Sep 4"
+			if (!isNaN(parsed)) {
+				const options = { month: "short", day: "numeric" };
+				shortDate = parsed.toLocaleDateString("en-US", options);
+			} else {
+				shortDate = dateStr;
+			}
 		}
 		const img = `https://ottdesign.club/${$(el).find('img').attr('src')}`;
 
@@ -59,7 +77,7 @@ function parseOttawaDesignClub(html, baseUrl) {
 					(eventYear === currentYear && eventMonth === currentMonth) ||
 					(eventYear === nextMonthYear && eventMonth === nextMonth)
 				) {
-					events.push({ title, url, start: date, image: img });
+					events.push({ title, url, longDate: longDate, shortDate: shortDate, image: img });
 				}
 			}
 		}
@@ -102,8 +120,19 @@ function parseCapCHI(html, baseUrl) {
 				return false; // break out of .each loop
 			}
     });
+		let longDate = date;
+		let shortDate = date;
+		if (date) {
+			const parsed = new Date(date);
+			if (!isNaN(parsed)) {
+				const longOptions = { month: "long", day: "numeric" };
+				longDate = parsed.toLocaleDateString("en-US", longOptions);
+				const shortOptions = { month: "short", day: "numeric" };
+				shortDate = parsed.toLocaleDateString("en-US", shortOptions);
+			}
+		}
     if (title) {
-      events.push({ title, url: new URL(url, baseUrl).toString(), start: date, image: img });
+      events.push({ title, url: new URL(url, baseUrl).toString(), longDate: longDate, shortDate: shortDate, image: img });
     }
   });
   return events;
@@ -139,8 +168,8 @@ function parseJsonLdEvents(html, sourceUrl) {
           // normalize
           events.push({
             title: c.name || c.headline || "",
-            start: c.startDate || c.start || "",
-            end: c.endDate || c.end || "",
+						longDate: c.startDate || c.start || "",
+						shortDate: c.startDate || c.start || "",
             url: c.url || sourceUrl,
             location: c.location?.name || (c.location?.address?.streetAddress ? `${c.location.address.streetAddress} ${c.location.address.addressLocality ?? ""}` : ""),
             description: c.description || "",
