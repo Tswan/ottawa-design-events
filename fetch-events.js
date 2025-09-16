@@ -5,11 +5,11 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const SOURCES = [
-  { name: "Eventbrite - Ottawa design", url: "https://www.eventbrite.com/d/canada--ottawa/design-events/" },
+//   { name: "Eventbrite - Ottawa design", url: "https://www.eventbrite.com/d/canada--ottawa/design-events/" },
   { name: "Ottawa Tourism calendar", url: "https://ottawatourism.ca/en/event-calendar" },
   { name: "Ottawa Design Club", url: "https://ottdesign.club/event.html" },
   { name: "Invest Ottawa events", url: "https://www.investottawa.ca/events/" },
-  { name: "ORSA events", url: "https://orsa.ca/events" },
+  // { name: "ORSA events", url: "https://orsa.ca/events" },
   { name: "CapCHI", url: "https://capchi.org/category/upcoming-events/" },
 ];
 
@@ -24,6 +24,89 @@ async function fetchHtml(url) {
   });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
   return await res.text();
+}
+
+function parseOttawaDesignClub(html, baseUrl) {
+	const $ = load(html);
+	const events = [];
+	$('.blog-post').each((i, el) => {
+		let title = $(el).find('a').text().trim();
+		// Remove leading "+" and whitespace/newlines
+		title = title.replace(/^\+[\s\n]*/, "");
+		const url = `https://ottdesign.club/${$(el).find('a').attr('href')}`;
+		const dateStr = $(el).find('.author').text().trim();
+		let date = "";
+		if (dateStr) {
+			const parsed = new Date(dateStr);
+			date = !isNaN(parsed) ? parsed.toISOString() : dateStr;
+		}
+		const img = `https://ottdesign.club/${$(el).find('img').attr('src')}`;
+
+		// Only push events of this month or next month
+		if (date) {
+			const eventDate = new Date(date);
+			if (!isNaN(eventDate)) {
+				const now = new Date();
+				const currentMonth = now.getMonth();
+				const currentYear = now.getFullYear();
+				const nextMonth = (currentMonth + 1) % 12;
+				const nextMonthYear = currentMonth === 11 ? currentYear + 1 : currentYear;
+
+				const eventMonth = eventDate.getMonth();
+				const eventYear = eventDate.getFullYear();
+
+				if (
+					(eventYear === currentYear && eventMonth === currentMonth) ||
+					(eventYear === nextMonthYear && eventMonth === nextMonth)
+				) {
+					events.push({ title, url, start: date, image: img });
+				}
+			}
+		}
+	});
+
+	return events;
+}
+
+function parseCapCHI(html, baseUrl) {
+  const $ = load(html);
+  const events = [];
+  $("article").each((i, el) => {
+		let title = $(el).find("h1").text().trim();
+		// Remove date from the beginning, e.g. "2025-09-16 Event Title"
+		title = title.replace(/^\d{4}-\d{2}-\d{2}\s*/, "");
+		const img = $(el).find("img").attr("src");
+    const url = $(el).find("a").attr("href");
+    let date = "";
+    $(el).find("p").each((i, p) => {
+      const text = $(p).text().trim();
+			if (text.startsWith("DATE TIME")) {
+				// Example: "DATE TIME: Tuesday September 16, 2025, 6:00-8:00 pm."
+				const match = text.match(/DATE TIME:\s*(.+?),\s*([\d:apm\- ]+)/i);
+				if (match) {
+					// match[1]: "Tuesday September 16, 2025"
+					// match[2]: "6:00-8:00 pm"
+					// Try to parse date and time
+					const dateStr = match[1].replace(/^\w+\s/, ""); // Remove weekday
+					const timeStr = match[2].split('-')[0].trim(); // Start time only
+					const fullStr = `${dateStr} ${timeStr}`;
+					const parsed = new Date(fullStr);
+					if (!isNaN(parsed)) {
+				date = parsed.toISOString();
+					} else {
+				date = `${dateStr} ${timeStr}`; // fallback
+					}
+				} else {
+					date = text;
+				}
+				return false; // break out of .each loop
+			}
+    });
+    if (title) {
+      events.push({ title, url: new URL(url, baseUrl).toString(), start: date, image: img });
+    }
+  });
+  return events;
 }
 
 // parse JSON-LD nodes that are Events
@@ -95,10 +178,15 @@ async function gather() {
       console.log("Fetching", s.url);
       const html = await fetchHtml(s.url);
       // prefer JSON-LD parsing
-      const fromLd = parseJsonLdEvents(html, s.url);
-      if (fromLd.length) {
-        console.log(` → ${fromLd.length} events from JSON-LD at ${s.name}`);
-        all.push(...fromLd);
+      let events = parseJsonLdEvents(html, s.url);
+			if (!events.length && s.name === "CapCHI") {
+				events = parseCapCHI(html, s.url);
+			} else if (!events.length && s.name === "Ottawa Design Club") {
+				events = parseOttawaDesignClub(html, s.url);
+			}
+      if (events.length) {
+        console.log(` → ${events.length} events from JSON-LD at ${s.name}`);
+        all.push(...events);
         continue;
       }
       // fallback heuristics
