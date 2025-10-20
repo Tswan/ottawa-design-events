@@ -99,20 +99,21 @@ function parseCapCHI(html, baseUrl) {
     $(el).find("p").each((i, p) => {
       const text = $(p).text().trim();
 			if (text.startsWith("DATE TIME")) {
-				// Example: "DATE TIME: Tuesday September 16, 2025, 6:00-8:00 pm."
-				const match = text.match(/DATE TIME:\s*(.+?),\s*([\d:apm\- ]+)/i);
+				// Example: "DATE TIME: Tuesday, October 21, 2025, 6:00-8:00 pm."
+				// Updated regex to capture everything between "DATE TIME:" and the last comma before the time
+				const match = text.match(/DATE TIME:\s*(.+),\s*([\d:apm\- ]+\.?)/i);
 				if (match) {
-					// match[1]: "Tuesday September 16, 2025"
+					// match[1]: "Tuesday, October 21, 2025"
 					// match[2]: "6:00-8:00 pm"
 					// Try to parse date and time
-					const dateStr = match[1].replace(/^\w+\s/, ""); // Remove weekday
-					const timeStr = match[2].split('-')[0].trim(); // Start time only
+					const dateStr = match[1].replace(/^\w+,?\s*/, ""); // Remove weekday and optional comma
+					const timeStr = match[2].replace(/\.$/, '').split('-')[0].trim(); // Remove period and get start time only
 					const fullStr = `${dateStr} ${timeStr}`;
 					const parsed = new Date(fullStr);
 					if (!isNaN(parsed)) {
-				date = parsed.toISOString();
+						date = parsed.toISOString();
 					} else {
-				date = `${dateStr} ${timeStr}`; // fallback
+						date = `${dateStr} ${timeStr}`; // fallback
 					}
 				} else {
 					date = text;
