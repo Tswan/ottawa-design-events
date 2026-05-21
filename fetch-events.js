@@ -5,12 +5,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const SOURCES = [
-//   { name: "Eventbrite - Ottawa design", url: "https://www.eventbrite.com/d/canada--ottawa/design-events/" },
+  // { name: "Eventbrite - Ottawa design", url: "https://www.eventbrite.com/d/canada--ottawa/design-events/" },
   { name: "Ottawa Tourism calendar", url: "https://ottawatourism.ca/en/event-calendar" },
   { name: "Ottawa Design Club", url: "https://ottdesign.club/event.html" },
   { name: "Invest Ottawa events", url: "https://www.investottawa.ca/events/" },
   // { name: "ORSA events", url: "https://orsa.ca/events" },
   { name: "CapCHI", url: "https://capchi.org/category/upcoming-events/" },
+  { name: "CreativeMornings Ottawa", url: "https://creativemornings.com/cities/ott" },
 ];
 
 async function fetchHtml(url) {
@@ -26,6 +27,55 @@ async function fetchHtml(url) {
   return await res.text();
 }
 
+async function parseCreativeMornings(html, baseUrl) {
+  const $ = load(html);
+  const events = [];
+  const speakers = $('.next-speaker').toArray();
+  for (const el of speakers) {
+    const title = $(el).find('.single-event-title').children().first().text().trim();
+    const dateStr = $(el).find('.event-details__date').text().trim();
+
+    // Find the "More Info" link to the event detail page
+    const detailHref = $(el).find('a').filter((i, a) => /more info/i.test($(a).text())).attr('href')
+      || $(el).find('a[href*="/talks/"]').attr('href')
+      || $(el).find('a').attr('href');
+    const url = detailHref
+      ? (detailHref.startsWith('http') ? detailHref : new URL(detailHref, baseUrl).toString())
+      : baseUrl;
+
+    let longDate = "";
+    let shortDate = "";
+    if (dateStr) {
+      const parsed = new Date(dateStr);
+      if (!isNaN(parsed)) {
+        longDate = parsed.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+        shortDate = parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      } else {
+        longDate = dateStr;
+        shortDate = dateStr;
+      }
+    }
+
+    // Fetch the detail page to get the event-user-avatar image
+    let img = "";
+    if (url && url !== baseUrl) {
+      try {
+        const detailHtml = await fetchHtml(url);
+        const $d = load(detailHtml);
+        img = $d('.event-user-avatar img').attr('src')
+          || $d('img.event-user-avatar').attr('src')
+          || "";
+      } catch (err) {
+        console.warn(`Could not fetch CreativeMornings detail page ${url}:`, err.message);
+      }
+    }
+
+    console.log("data", title, url, longDate, shortDate, img);
+    events.push({ title, url, longDate, shortDate, image: img });
+  }
+  return events;
+}
+
 function parseOttawaDesignClub(html, baseUrl) {
 	const $ = load(html);
 	const events = [];
@@ -38,6 +88,7 @@ function parseOttawaDesignClub(html, baseUrl) {
 		let date = "";
 		let longDate = "";
 		let shortDate = "";
+    
 		// Try to parse date string
 		// Examples: "September 4, 2025", "October 2, 2025"
 		if (dateStr) {
@@ -77,7 +128,7 @@ function parseOttawaDesignClub(html, baseUrl) {
 					(eventYear === currentYear && eventMonth === currentMonth) ||
 					(eventYear === nextMonthYear && eventMonth === nextMonth)
 				) {
-					events.push({ title, url, longDate: longDate, shortDate: shortDate, image: img });
+					 events.push({ title, url, longDate: longDate, shortDate: shortDate, image: img });
 				}
 			}
 		}
@@ -213,7 +264,9 @@ async function gather() {
 				events = parseCapCHI(html, s.url);
 			} else if (!events.length && s.name === "Ottawa Design Club") {
 				events = parseOttawaDesignClub(html, s.url);
-			}
+			} else if (!events.length && s.name === "CreativeMornings Ottawa") {
+        events = await parseCreativeMornings(html, s.url);
+      }
       if (events.length) {
         console.log(` → ${events.length} events from JSON-LD at ${s.name}`);
         all.push(...events);
